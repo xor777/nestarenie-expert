@@ -8,9 +8,9 @@
    ```
    OPENAI_API_KEY=your_openai_api_key
    TELEGRAM_TOKEN=your_telegram_bot_token
-   TEMPERATURE=0.3
-   MIN_RELEVANCE=0.5
-   MAX_TOKENS=8000
+   TEMPERATURE=0.3 # температура для генеративной модели (0 - консервативно, 1 - агрессивно)
+   MIN_RELEVANCE=0.5 # минимальное значение релевантности для ответа для поиска в векторной базе
+   MAX_TOKENS=8000 # максимальное количество токенов в запросе от пользователя
    ```
 
 ## Использование
