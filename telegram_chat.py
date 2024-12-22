@@ -14,7 +14,6 @@ MIN_RELEVANCE = float(os.getenv('MIN_RELEVANCE', 0.7))
 MAX_TOKENS = int(os.getenv('MAX_TOKENS', 8000))
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-# Initialize ChromaDB
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_collection("questions")
 
@@ -125,21 +124,18 @@ def generate_response(query: str, context: List[Dict]) -> str:
     return response.choices[0].message.content
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /start is issued."""
     await update.message.reply_text(
         "Здравствуйте! Я - медицинская экспертная система в области биотехнологий и науки о старении. "
         "Задавайте ваши вопросы, и я постараюсь ответить на них, основываясь на научных данных."
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /help is issued."""
     await update.message.reply_text(
         "Я могу ответить на ваши вопросы о биотехнологиях и науке о старении. "
         "Просто напишите свой вопрос, и я постараюсь найти релевантную информацию в своей базе знаний."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle user messages."""
     query = update.message.text
     user = update.effective_user
     
@@ -160,13 +156,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(response)
 
 def main() -> None:
-    """Start the bot."""
     if not os.path.exists("./chroma_db"):
-        print("Ошибка: База данных не найдена. Сначала запустите load_dataset.py")
+        print("База данных не найдена. Сначала запустите load_dataset.py")
         return
         
     if not TELEGRAM_TOKEN:
-        print("Ошибка: Не найден токен Telegram бота. Добавьте TELEGRAM_TOKEN в .env файл")
+        print("Не найден токен Telegram бота. Добавьте TELEGRAM_TOKEN в .env файл")
         return
 
     application = Application.builder().token(TELEGRAM_TOKEN).build()
