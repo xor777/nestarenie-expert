@@ -1,4 +1,4 @@
-# Nestarenie RAG Chatbot
+# PoC of RAG Chatbot for the "Nestarenie" project
 
 ## Перед запуском
 
