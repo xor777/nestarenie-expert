@@ -7,12 +7,21 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 load_dotenv()
-client_openai = OpenAI()
+
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+if not OPENAI_API_KEY:
+    print("Не найден ключ OPENAI_API_KEY в переменных окружения, добавьте его в .env файл")
+    exit(1)
+
+client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 TEMPERATURE = float(os.getenv('TEMPERATURE', 0.3))
 MIN_RELEVANCE = float(os.getenv('MIN_RELEVANCE', 0.7))
 MAX_TOKENS = int(os.getenv('MAX_TOKENS', 8000))
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TELEGRAM_TOKEN:
+    print("Не найден токен TELEGRAM_TOKEN в переменных окружения, добавьте его в .env файл")
+    exit(1)
 
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_collection("questions")
@@ -158,10 +167,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def main() -> None:
     if not os.path.exists("./chroma_db"):
         print("База данных не найдена. Сначала запустите load_dataset.py")
-        return
-        
-    if not TELEGRAM_TOKEN:
-        print("Не найден токен Telegram бота. Добавьте TELEGRAM_TOKEN в .env файл")
         return
 
     application = Application.builder().token(TELEGRAM_TOKEN).build()
