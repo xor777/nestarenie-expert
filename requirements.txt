@@ -1,0 +1,6 @@
+chromadb
+openai
+python-telegram-bot
+python-dotenv
+pandas
+tqdm 
