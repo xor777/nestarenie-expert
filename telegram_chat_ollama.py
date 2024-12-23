@@ -1,26 +1,22 @@
 import os
 import chromadb
-from openai import OpenAI
 from dotenv import load_dotenv
 from typing import Optional, List, Dict
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import requests
 
 load_dotenv()
-
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-if not OPENAI_API_KEY:
-    print("Не найден ключ OPENAI_API_KEY в переменных окружения, добавьте его в .env файл")
-    exit(1)
-
-client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 TEMPERATURE = float(os.getenv('TEMPERATURE', 0.3))
 MIN_RELEVANCE = float(os.getenv('MIN_RELEVANCE', 0.7))
 MAX_TOKENS = int(os.getenv('MAX_TOKENS', 8000))
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'evilfreelancer/enbeddrus')
+GENERATION_MODEL = os.getenv('GENERATION_MODEL', 'llama3.2')
+
 if not TELEGRAM_TOKEN:
-    print("Не найден токен TELEGRAM_TOKEN в переменных окружения, добавьте его в .env файл")
+    print("Error: TELEGRAM_TOKEN not found in environment variables")
     exit(1)
 
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
@@ -31,16 +27,23 @@ def get_embedding(text: str) -> Optional[List[float]]:
         text = " ".join(text.split())
         
         if len(text) > MAX_TOKENS * 4:  
-            print("Предупреждение: текст слишком длинный, будет использована только его часть")
+            print("Предупреждение: текст слишком длинный, будет обрезан")
             text = text[:MAX_TOKENS * 4]
         
-        response = client_openai.embeddings.create(
-            model="text-embedding-3-large",
-            input=text
+        response = requests.post(
+            'http://localhost:11434/api/embeddings',
+            json={
+                'model': EMBEDDING_MODEL,
+                'prompt': text
+            }
         )
-        return response.data[0].embedding
+        if response.status_code == 200:
+            return response.json()['embedding']
+        else:
+            print(f"Ошибка получения эмбеддинга: {response.status_code}")
+            return None
     except Exception as e:
-        print(f"Ошибка при получении эмбеддинга: {str(e)}")
+        print(f"Ошибка запроса к Ollama: {str(e)}")
         return None
 
 def get_relevant_context(query: str) -> List[Dict]:
@@ -55,7 +58,7 @@ def get_relevant_context(query: str) -> List[Dict]:
             include=["documents", "metadatas", "distances"]
         )
     except Exception as e:
-        print(f"Ошибка при поиске в базе данных: {str(e)}")
+        print(f"Database search error: {str(e)}")
         return []
     
     context = []
@@ -79,7 +82,7 @@ def get_relevant_context(query: str) -> List[Dict]:
 
 def generate_response(query: str, context: List[Dict]) -> str:
     if not context:
-        return "Извините, в базе знаний нет достаточно релевантной информации для ответа на ваш вопрос. Пожалуйста, переформулируйте вопрос или задайте другой вопрос о биотехнологиях и науке о старении."
+        return "Извините, в моей базе знаний нет достаточно релевантной информации для ответа на ваш вопрос. Пожалуйста, попробуйте переформулировать вопрос."
     
     context_text = "\n\n".join([
         f"[ДАННЫЕ]\n{c['answer']}\n[ИСТОЧНИКИ]\n{c['reference']}"
@@ -90,11 +93,13 @@ def generate_response(query: str, context: List[Dict]) -> str:
 
         ТВОЯ ЗАДАЧА:
         Дать точный ответ на вопрос пользователя, основываясь СТРОГО на научных данных из предоставленного контекста.
+        ВСЕГДА отвечай на русском языке.
 
         СТРОГИЙ ФОРМАТ ОТВЕТА:
-        1. Один параграф текста с ответом на вопрос
-        2. Если есть источники, пиши "Ссылки:" на новой строке и список источников
-        3. Если источников нет, заканчивай ответ параграфом текста
+        1. Всегда отвечай на русском языке
+        2. Один параграф текста с ответом на вопрос
+        3. Если есть источники, пиши "Ссылки:" на новой строке и список источников
+        4. Если источников нет, заканчивай ответ параграфом текста
 
         КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
         1. ИСПОЛЬЗУЙ только информацию из раздела [ДАННЫЕ]
@@ -102,46 +107,46 @@ def generate_response(query: str, context: List[Dict]) -> str:
         3. ПРИДЕРЖИВАЙСЯ заданного формата ответа
         4. ПРИЗНАВАЙ отсутствие информации, если её нет
         5. НЕ ПИШИ ничего лишнего
+        6. ВСЕГДА отвечай на русском языке
 
         ТЫ БУДЕШЬ ОШТРАФОВАН ЗА:
         - Отклонение от заданного формата ответа
         - Использование информации не из раздела [ДАННЫЕ]
         - Добавление лишней информации
         - Интерпретацию данных
-        - Предположения и выводы'''
+        - Предположения и выводы
+        - Ответ не на русском языке'''
 
-    user_prompt = f'''КОНТЕКСТ:
+    prompt = f'''КОНТЕКСТ:
         {context_text}
 
         ВОПРОС ПОЛЬЗОВАТЕЛЯ:
         {query}
 
         СТРОГИЕ ТРЕБОВАНИЯ К ОТВЕТУ:
-        1. Один параграф текста с ответом
-        2. После ответа на новой строке напиши "Ссылки:" и источники из [ИСТОЧНИКИ], ТОЛЬКО если они есть
+        1. Один параграф текста с ответом на русском языке
+        2. После ответа на новой строке напиши "Источники:" и источники из [ИСТОЧНИКИ], ТОЛЬКО если они есть
         3. Никакой лишней информации
         4. Если данных нет или их недостаточно - так и напиши в одном параграфе'''
 
-    #print(f"Context: {context_text}")
-    #print(f"System prompt: {system_prompt}")
-    #print(f"User prompt: {user_prompt}")
-    
     try:
-        response = client_openai.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=TEMPERATURE,
-            max_tokens=2000
+        response = requests.post(
+            'http://localhost:11434/api/generate',
+            json={
+                'model': GENERATION_MODEL,
+                'prompt': prompt,
+                'temperature': TEMPERATURE,
+                'stream': False
+            }
         )
-        
-        return response.choices[0].message.content
-    
+        if response.status_code == 200:
+            return response.json()['response']
+        else:
+            print(f"Ошибка генерации ответа: {response.status_code}")
+            return "Произошла ошибка при генерации ответа. Пожалуйста, попробуйте еще раз."
     except Exception as e:
-        print(f"Ошибка при генерации ответа: {str(e)}")
-        return "Извините, произошла техническая ошибка. Пожалуйста, попробуйте переформулировать вопрос."
+        print(f"Ошибка запроса к Ollama: {str(e)}")
+        return "Произошла техническая ошибка. Пожалуйста, попробуйте еще раз."
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -162,7 +167,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     print(f"\n{'='*20} вопрос: {'='*20}")
     print(f"Username: {user.username or user.id} | Name: {user.first_name}")
     print(f"Question: {query}")
-    print(f"{'='*60}")
     
     await update.message.chat.send_action(action="typing")
     
@@ -177,8 +181,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 def main() -> None:
     if not os.path.exists("./chroma_db"):
-        print("База данных не найдена. Сначала запустите load_dataset.py")
+        print("Error: Database not found. Run load_dataset.py first")
         return
+
+    try:
+        response = requests.get('http://localhost:11434/api/tags')
+        if response.status_code != 200:
+            print("Error: Ollama server is not available")
+            exit(1)
+    except Exception as e:
+        print(f"Error connecting to Ollama: {str(e)}")
+        print("Make sure Ollama is running and available at localhost:11434")
+        exit(1)
 
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -186,7 +200,7 @@ def main() -> None:
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("Бот запущен")
+    print("Bot is running")
     application.run_polling()
 
 if __name__ == "__main__":
