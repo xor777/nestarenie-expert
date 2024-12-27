@@ -1,7 +1,9 @@
 # PoC of RAG Chatbot for the "Nestarenie" project
 
 Сейчас основной рабочий скрипт - telegram_chat_hybrid.py
+
 диаграмма работы бота в файле flow.md
+
 для удобства сделан скрипт управления векторной базой данных manage_db.py
 `python manage_db.py --stats` - статистика базы данных (можно посмотреть сколько всего записей, сгенерированных записей)
 `python manage_db.py --delete-generated` - удаление всех сгенерированных записей
