@@ -17,7 +17,7 @@ client_openai = OpenAI(api_key=OPENAI_API_KEY)
 
 TEMPERATURE = float(os.getenv('TEMPERATURE', 0.3))
 MIN_RELEVANCE = float(os.getenv('MIN_RELEVANCE', 0.7))
-MAX_TOKENS = int(os.getenv('MAX_TOKENS', 8000))
+MAX_INPUT_TOKENS = int(os.getenv('MAX_INPUT_TOKENS', 1000))
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 if not TELEGRAM_TOKEN:
     print("Не найден токен TELEGRAM_TOKEN в переменных окружения, добавьте его в .env файл")
@@ -30,12 +30,12 @@ def get_embedding(text: str) -> Optional[List[float]]:
     try:
         text = " ".join(text.split())
         
-        if len(text) > MAX_TOKENS * 4:  
+        if len(text) > MAX_INPUT_TOKENS * 4:
             print("Предупреждение: текст слишком длинный, будет использована только его часть")
-            text = text[:MAX_TOKENS * 4]
+            text = text[:MAX_INPUT_TOKENS * 4]
         
         response = client_openai.embeddings.create(
-            model="text-embedding-3-large",
+            model=EMBEDDING_MODEL,
             input=text
         )
         return response.data[0].embedding

@@ -36,7 +36,6 @@ def get_embedding(text: str) -> Optional[list]:
             headers=headers,
             json=request_body
         )
-        
         return response.json()['embedding'] if response.status_code == 200 else None
             
     except Exception as e:

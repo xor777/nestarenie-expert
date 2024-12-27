@@ -6,12 +6,16 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+if 'EMBEDDING_MODEL' in os.environ:
+    del os.environ['EMBEDDING_MODEL']
 load_dotenv()
+
 client_openai = OpenAI()
+EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-small')
 
 def get_embedding(text):
     response = client_openai.embeddings.create(
-        model="text-embedding-3-large",
+        model=EMBEDDING_MODEL,
         input=text
     )
     return response.data[0].embedding
