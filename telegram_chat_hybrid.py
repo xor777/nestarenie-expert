@@ -116,7 +116,7 @@ def generate_response(query: str, context: List[Dict]) -> Dict:
         Ты должен вернуть JSON объект следующего формата:
         {
             "answer": "Точный ответ на вопрос, включающий ВСЕ важные детали из предоставленного контекста",
-            "reference": "Список использованных URL, разделенных точкой с запятой"
+            "reference": "Список использованных URL в ТОЧНО таком же формате, как они даны в контексте (с www. или https://), разделенных пробелом"
         }
 
         ПРАВИЛА СОСТАВЛЕНИЯ ОТВЕТА:
@@ -124,7 +124,8 @@ def generate_response(query: str, context: List[Dict]) -> Dict:
         2. Используй все важные детали, цифры, факты и пояснения
         3. Не пропускай значимые подробности
         4. Ответ должен быть максимально информативным
-        5. В поле "reference" укажи только УНИКАЛЬНЫЕ URL через точку с запятой'''
+        5. В поле "reference" копируй URL ТОЧНО в том формате, в котором они даны в контексте
+        6. URL в reference должны быть разделены пробелом'''
 
     user_message = f'''КОНТЕКСТ:
         {context_text}
@@ -135,8 +136,8 @@ def generate_response(query: str, context: List[Dict]) -> Dict:
         ТРЕБОВАНИЯ:
         1. Верни JSON объект с полями "answer" и "reference"
         2. В поле "answer" дай ПОДРОБНЫЙ ответ на вопрос
-        3. В поле "reference" укажи только использованные URL через точку с запятой
-        4. URL должны быть скопированы точно, без изменений'''
+        3. В поле "reference" скопируй URL ТОЧНО в том формате, в котором они даны в контексте
+        4. URL должны быть разделены пробелом'''
     
     try:
         response = client_openai.chat.completions.create(
@@ -184,7 +185,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if relevant_context[0]['relevance'] >= DIRECT_ANSWER_RELEVANCE:
         most_relevant = relevant_context[0]
         emoji = "🚀" if most_relevant['is_generated'] else "📖"
-        response = f"{emoji} {most_relevant['answer']}\n\nИсточник: {most_relevant['reference']}"
+
+        references = "\n".join(most_relevant['reference'].split())
+        response = f"{emoji} {most_relevant['answer']}\n\nИсточники:\n{references}"
         
     # Если есть контекст, но нет ответа с высокой релевантностью - генерируем
     else:
@@ -195,7 +198,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
         response_data = json.loads(generated)
         save_generated_answer(query, response_data["answer"], response_data["reference"])
-        response = f"🧠 {response_data['answer']}\n\nИсточники: {response_data['reference']}"
+        references = "\n".join(response_data["reference"].split())
+        response = f"🧠 {response_data['answer']}\n\nИсточники:\n{references}"
     
     if len(response) > 4096:
         for i in range(0, len(response), 4096):

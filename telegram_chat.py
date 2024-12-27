@@ -35,7 +35,7 @@ def get_embedding(text: str) -> Optional[List[float]]:
             text = text[:MAX_INPUT_TOKENS * 4]
         
         response = client_openai.embeddings.create(
-            model=EMBEDDING_MODEL,
+            model='text-embedding-3-small',
             input=text
         )
         return response.data[0].embedding
