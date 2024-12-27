@@ -63,15 +63,9 @@ def save_generated_answer(question: str, answer: str, reference: str = "GPT") ->
     except Exception as e:
         print(f"Ошибка при сохранении ответа: {str(e)}")
 
-def get_relevant_context(query: str, query_embedding: Optional[List[float]] = None, include_generated: bool = True) -> List[Dict]:
+def get_relevant_context(query: str, query_embedding: List[float], include_generated: bool = True) -> List[Dict]:
+    print(f"searching... [pre-generated {'included' if include_generated else 'excluded'}]")
     
-    print(f"searching... [embedding: {'reused' if query_embedding else 'new'}, generated: {'included' if include_generated else 'excluded'}]")
-    
-    if not query_embedding:
-        query_embedding = get_embedding(query)
-        if not query_embedding:
-            return []
-        
     try:
         results = collection.query(
             query_embeddings=[query_embedding],
@@ -115,41 +109,48 @@ def generate_response(query: str, context: List[Dict]) -> Dict:
         return None
     
     context_text = "\n\n".join([
-        f"ФРАГМЕНТ #{i+1}\nКОНТЕКСТ:\n{c['answer']}\nURL:\n{c['reference']}"
+        f"ФРАГМЕНТ #{i+1}\nВОПРОС:\n{c['question']}\nОТВЕТ:\n{c['answer']}\nURL:\n{c['reference']}"
         for i, c in enumerate(sorted(context, key=lambda x: x['relevance'], reverse=True))
     ])
 
-    system_message = '''Ты - специализированная медицинская система для точных ответов на вопросы о биотехнологиях и науке о старении.
+    system_message = '''Ты - медицинская экспертная система. Твоя задача - найти наиболее релевантные фрагменты контекста и дать научно обоснованный ответ.
 
-        ТВОЯ ЗАДАЧА:
-        Дать точный ответ на вопрос пользователя, основываясь СТРОГО на научных данных из предоставленного контекста.
-
-        ФОРМАТ ОТВЕТА:
-        Ты должен вернуть JSON объект следующего формата:
-        {
-            "answer": "Точный ответ на вопрос, включающий ВСЕ важные детали из предоставленного контекста",
-            "reference": "Список использованных URL в ТОЧНО таком же формате, как они даны в контексте (с www. или https://), разделенных пробелом"
-        }
+        КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
+        1. Сравни вопрос пользователя с вопросами во фрагментах 
+        2. Выбери фрагменты, где вопросы максимально близки по смыслу и намерению
+        3. Используй для ответа ТОЛЬКО выбранные релевантные фрагменты
+        4. Включай в reference ТОЛЬКО URL из использованных фрагментов
 
         ПРАВИЛА СОСТАВЛЕНИЯ ОТВЕТА:
-        1. В поле "answer" включай ВСЮ существенную информацию из контекста
-        2. Используй все важные детали, цифры, факты и пояснения
-        3. Не пропускай значимые подробности
-        4. Ответ должен быть максимально информативным
-        5. В поле "reference" копируй URL ТОЧНО в том формате, в котором они даны в контексте
-        6. URL в reference должны быть разделены пробелом'''
+        1. Ответ должен быть структурированным и логичным
+        2. Включай все важные детали: цифры, факты, научные термины
+        3. Используй научный стиль изложения
+        4. Сохраняй точность формулировок из источников
+        5. Если есть противоречия между фрагментами - укажи на них
+        6. При наличии статистики или исследований - приводи их результаты
+        7. Избегай обобщений без подтверждения данными
+
+        ФОРМАТ ОТВЕТА:
+        {
+        "answer": "Подробный научный ответ на основе релевантных фрагментов",
+        "reference": "URL использованных фрагментов"
+        }'''
 
     user_message = f'''КОНТЕКСТ:
         {context_text}
 
-        ВОПРОС:
+        ВОПРОС ПОЛЬЗОВАТЕЛЯ:
         {query}
 
-        ТРЕБОВАНИЯ:
-        1. Верни JSON объект с полями "answer" и "reference"
-        2. В поле "answer" дай ПОДРОБНЫЙ ответ на вопрос
-        3. В поле "reference" скопируй URL ТОЧНО в том формате, в котором они даны в контексте
-        4. URL должны быть разделены пробелом'''
+        ПРОЦЕСС:
+        1. Найди фрагменты с максимально похожими вопросами
+        2. Проанализируй информацию в этих фрагментах
+        3. Составь структурированный научный ответ
+        4. Включи все важные данные и детали
+        5. Добавь в reference ТОЛЬКО URL использованных фрагментов
+        6. Проверь точность и полноту ответа
+
+        Верни JSON с полями "answer" и "reference"'''
     
     try:
         response = client_openai.chat.completions.create(
@@ -209,7 +210,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
     # Если нет ответа с высокой релевантностью - генерируем новый на основе только оригинальных ответов
     else:
-        # Используем тот же эмбеддинг для поиска оригинальных ответов
         original_context = get_relevant_context(query, query_embedding=query_embedding, include_generated=False)
         if not original_context:
             await update.message.reply_text("Извините, в базе знаний нет достаточно релевантной информации по вашему вопросу.")
