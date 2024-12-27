@@ -46,7 +46,7 @@ def load_dataset():
     collection.add(
         embeddings=embeddings,
         documents=questions,
-        metadatas=[{"answer": a, "reference": r} for a, r in zip(answers, references)],
+        metadatas=[{"answer": a, "reference": r, "is_generated": False} for a, r in zip(answers, references)],
         ids=ids
     )
     
