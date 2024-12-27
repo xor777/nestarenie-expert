@@ -63,10 +63,14 @@ def save_generated_answer(question: str, answer: str, reference: str = "GPT") ->
     except Exception as e:
         print(f"Ошибка при сохранении ответа: {str(e)}")
 
-def get_relevant_context(query: str) -> List[Dict]:
-    query_embedding = get_embedding(query)
+def get_relevant_context(query: str, query_embedding: Optional[List[float]] = None, include_generated: bool = True) -> List[Dict]:
+    
+    print(f"searching... [embedding: {'reused' if query_embedding else 'new'}, generated: {'included' if include_generated else 'excluded'}]")
+    
     if not query_embedding:
-        return []
+        query_embedding = get_embedding(query)
+        if not query_embedding:
+            return []
         
     try:
         results = collection.query(
@@ -85,16 +89,24 @@ def get_relevant_context(query: str) -> List[Dict]:
         results['distances'][0]
     ):
         relevance = 1 - distance
-        if relevance < MIN_RELEVANCE:
-            print(f"relevance: {relevance} | skipped: {question}")
+        is_generated = metadata.get('is_generated', False)
+        
+        # Пропускаем сгенерированные ответы, если include_generated=False
+        if not include_generated and is_generated:
+            print(f"relevance: {relevance} | skipped (generated): {question}")
             continue
+            
+        if relevance < MIN_RELEVANCE:
+            print(f"relevance: {relevance} | skipped (relevance): {question}")
+            continue
+            
         print(f"relevance: {relevance} | added: {question}")
         context.append({
             "question": question,
             "answer": metadata["answer"],
             "reference": metadata["reference"],
             "relevance": relevance,
-            "is_generated": metadata.get("is_generated", False)
+            "is_generated": is_generated
         })
     return context
 
@@ -174,7 +186,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     await update.message.chat.send_action(action="typing")
     
-    relevant_context = get_relevant_context(query)
+    # Получаем эмбеддинг один раз
+    query_embedding = get_embedding(query)
+    if not query_embedding:
+        await update.message.reply_text("Извините, произошла ошибка при обработке вопроса.")
+        return
+    
+    # Ищем среди всех ответов
+    relevant_context = get_relevant_context(query, query_embedding=query_embedding, include_generated=True)
     
     # Если контекст пустой, значит вопрос не по теме
     if not relevant_context:
@@ -185,18 +204,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if relevant_context[0]['relevance'] >= DIRECT_ANSWER_RELEVANCE:
         most_relevant = relevant_context[0]
         emoji = "🚀" if most_relevant['is_generated'] else "📖"
-
         references = "\n".join(most_relevant['reference'].split())
         response = f"{emoji} {most_relevant['answer']}\n\nИсточники:\n{references}"
         
-    # Если есть контекст, но нет ответа с высокой релевантностью - генерируем
+    # Если нет ответа с высокой релевантностью - генерируем новый на основе только оригинальных ответов
     else:
-        generated = generate_response(query, relevant_context)
+        # Используем тот же эмбеддинг для поиска оригинальных ответов
+        original_context = get_relevant_context(query, query_embedding=query_embedding, include_generated=False)
+        if not original_context:
+            await update.message.reply_text("Извините, в базе знаний нет достаточно релевантной информации по вашему вопросу.")
+            return
+            
+        generated = generate_response(query, original_context)
         if not generated:
             await update.message.reply_text("Извините, произошла ошибка при генерации ответа.")
             return
             
         response_data = json.loads(generated)
+        # Используем уже полученный эмбеддинг для сохранения
         save_generated_answer(query, response_data["answer"], response_data["reference"])
         references = "\n".join(response_data["reference"].split())
         response = f"🧠 {response_data['answer']}\n\nИсточники:\n{references}"
